@@ -328,7 +328,7 @@ pub fn parse_instruction(
             op1 = words[0].to_uppercase();
             op2 = words[1].clone();
         }
-        _ => panic!("wtf")
+        _ => panic!("Line {}: wtf, word count is '{}'. '{:?}'", line, words.len(), words)
     }
 
     // Get first register
