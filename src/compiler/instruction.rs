@@ -315,7 +315,7 @@ pub fn parse_instruction(
 
     match words.len() {
         0 => {
-            op1 = String::new();
+            op1 = "R0".to_string();
             op2 = String::new();
         }
         1 => {
