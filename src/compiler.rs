@@ -72,6 +72,8 @@ pub fn compile(source: String) -> Result<String, String> {
             _ => return Err(format!("Compiler made an error on line {}: {} is not a directive.", statement.line, keyword))
         }
     }
+    // Unpack org from option.
+    let org = org.unwrap_or(0);
 
     // Get constants
     match parse_const_statements(&statements) {
@@ -94,19 +96,15 @@ pub fn compile(source: String) -> Result<String, String> {
 
     let all_symbols = merge_symbol_tables(
         &const_symbols,
-        &data_symbols,
         &code_symbols,
+        &data_symbols,
+        org,
+        org + code_size,
     );
 
     for statement in statements {
         if statement.statement_type == Keyword::Code {
-            // TODO: symbol maps could be merged into one to make this function signature neater.
-            code_segment.push(parse_instruction(
-                statement,
-                org,
-                &all_symbols,
-                code_size,
-            )?);
+            code_segment.push(parse_instruction(statement, &all_symbols)?);
         }
     }
 
@@ -406,10 +404,9 @@ fn build_b91(
     data_segment: Vec<i32>,
     code_symbols: HashMap<String, i32>,
     data_symbols: HashMap<String, i32>,
-    org: Option<usize>,
+    org: usize,
 ) -> Result<String, String>
 {
-    let org = org.unwrap_or(0);
     let code_size = code_segment.len();
     let fp_start: i32 = (org + code_size) as i32 - 1; // fp_start can be -1 if code_size == 0
     let data_start = code_size + org;
@@ -533,19 +530,21 @@ fn str_to_integer(input_string: &str) -> Result<i32, String> {
 }
 
 fn merge_symbol_tables(
-    a: &HashMap<String, i32>,
-    b: &HashMap<String, i32>,
-    c: &HashMap<String, i32>,
+    const_symbols: &HashMap<String, i32>,
+    code_symbols: &HashMap<String, i32>,
+    data_symbols: &HashMap<String, i32>,
+    code_start: usize,
+    data_start: usize,
 ) -> HashMap<String, i32> {
     let mut map = HashMap::new();
-    for (key, value) in a.into_iter() {
+    for (key, value) in const_symbols.into_iter() {
         map.insert(key.clone(), value.clone());
     }
-    for (key, value) in b.into_iter() {
-        map.insert(key.clone(), value.clone());
+    for (key, value) in code_symbols.into_iter() {
+        map.insert(key.clone(), value + code_start as i32);
     }
-    for (key, value) in c.into_iter() {
-        map.insert(key.clone(), value.clone());
+    for (key, value) in data_symbols.into_iter() {
+        map.insert(key.clone(), value + data_start as i32);
     }
     map
 }

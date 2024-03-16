@@ -281,12 +281,9 @@ impl OpCode {
 
 pub fn parse_instruction(
     statement: Statement,
-    org: Option<usize>,
     symbols: &HashMap<String, i32>,
-    code_size: usize,
 ) -> Result<i32, String>
 {
-    let org = org.unwrap_or(0);
     let mut words = statement.words.clone();
     let keyword_string = statement.words[0].to_uppercase();
     let keyword = keyword_string.as_str();
@@ -377,8 +374,11 @@ pub fn parse_instruction(
         return Err(format!("Line {}: Couldn't parse second operand: {}", line, op2));
     }
 
+    if mode < 0 && mode > 2 {
+        return Err(format!("Line {}: Mode {} is out of range", line, mode));
+    }
     if addr < i16::MIN as i32 && addr > u16::MAX as i32 {
-        return Err(format!("Line {}: Address: {} is out of range", line, addr));
+        return Err(format!("Line {}: Address {} is out of range", line, addr));
     }
 
     let mut value;
@@ -634,10 +634,10 @@ mod tests {
     fn test_parse_instruction() {
         // Dummy symbol table
         let map = Default::default();
-        assert_eq!(parse_instruction(dummy_statement("add r1 =0"), None, &map, 0).unwrap(), 287309824);
-        assert_eq!(parse_instruction(dummy_statement("add r1 @(r1)"), None, &map, 0).unwrap(), 288423936);
-        assert_eq!(parse_instruction(dummy_statement("store r1 @0"), None, &map, 0).unwrap(), 19398656);
-        assert_eq!(parse_instruction(dummy_statement("store r1 @(r1)"), None, &map, 0).unwrap(), 19464192);
+        assert_eq!(parse_instruction(dummy_statement("add r1 =0"), &map).unwrap(), 287309824);
+        assert_eq!(parse_instruction(dummy_statement("add r1 @(r1)"), &map).unwrap(), 288423936);
+        assert_eq!(parse_instruction(dummy_statement("store r1 @0"), &map).unwrap(), 19398656);
+        assert_eq!(parse_instruction(dummy_statement("store r1 @(r1)"), &map).unwrap(), 19464192);
     }
 
     fn dummy_statement(text: &str) -> Statement {
