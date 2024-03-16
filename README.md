@@ -30,8 +30,26 @@ Tools:
    titoasm file.k91 -o outputfile.b91
 ```
 
+## Use libttktk in rust code
+Cargo.toml:
+```toml
+    [dependencies]
+
+    # ...
+
+    ttktk = { git = "https://github.com/sevonj/ttktk.git" }
+```
+code:
+```rust
+    use libttktk::compiler::compile;
+
+    // ...
+
+    let result = compile(source);
+```
+
 ## Building
-You need Rustlang.
+You need Rust.
 
 Shell examples:
 ```shell
