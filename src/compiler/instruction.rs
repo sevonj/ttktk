@@ -282,9 +282,9 @@ impl OpCode {
 pub fn parse_instruction(
     statement: Statement,
     org: Option<usize>,
-    const_symbols: &HashMap<String, i16>,
-    code_symbols: &HashMap<String, usize>,
-    data_symbols: &HashMap<String, usize>,
+    const_symbols: &HashMap<String, i32>,
+    code_symbols: &HashMap<String, i32>,
+    data_symbols: &HashMap<String, i32>,
     code_size: usize,
 ) -> Result<i32, String>
 {
@@ -338,7 +338,6 @@ pub fn parse_instruction(
         Err(e) => return Err(format!("Line {}: {}", line, e))
     }
 
-
     // Parse op2: Ri, mode, addr
     let mode;
     let ri;
@@ -354,10 +353,7 @@ pub fn parse_instruction(
         mode = opcode.get_default_mode() + parsed.mode;
 
         // Register
-        match Register::from_str(parsed.register.as_str()) {
-            Ok(register) => ri = register,
-            Err(_) => return Err(format!("Line {}: Invalid register '{}' for second operand!", line, op2)),
-        }
+        ri = parsed.register;
 
         // Address
         if parsed.addr.as_str() == "" {
@@ -371,10 +367,10 @@ pub fn parse_instruction(
             addr = val.to_i32().unwrap();
         } else if let Some(offset) = data_symbols.get(&parsed.addr) {
             // (is variable)
-            addr = (org + code_size + offset).to_i32().unwrap();
+            addr = (org + code_size).to_i32().unwrap() + offset;
         } else if let Some(offset) = code_symbols.get(&parsed.addr) {
             // (is code label)
-            addr = (org + offset).to_i32().unwrap();
+            addr = (org).to_i32().unwrap() + offset;
         } else if let Ok(val) = str_to_integer(parsed.addr.as_str()) {
             // (is number)
             addr = val;
@@ -403,14 +399,13 @@ pub fn parse_instruction(
 struct Op2 {
     pub mode: i32,
     pub addr: String,
-    pub register: String,
+    pub register: Register,
 }
 
 /// Parse second operand: "=123(R2)"
 fn parse_op2(input_str: &str) -> Result<Op2, String> {
     let mut mode: i32 = 0;
     let mut addr = String::new();
-    let mut register = String::new();
     //let mut chars = input_str.chars();
 
     let mut text = input_str.to_string();
@@ -430,13 +425,14 @@ fn parse_op2(input_str: &str) -> Result<Op2, String> {
         text.remove(0);
     }
 
-    // Second operand text _is_ a register, no address.
-    if Register::from_str(text.as_str()).is_ok() {
+    // We're done already: Second operand text is a register with no address.
+    if let Ok(register) = Register::from_str(text.as_str()) {
+
         // Do not allow negative direct register addressing "-R1"
         if addr.as_str() == "-" {
             return Err(format!("Negative direct register addressing '{}' is not allowed. The minus sign only affects address portion.", input_str));
         }
-        register = text;
+
         return Ok(Op2 {
             mode: mode - 1, // Register only decrements because of direct reg addressing
             addr,
@@ -444,17 +440,18 @@ fn parse_op2(input_str: &str) -> Result<Op2, String> {
         });
     }
 
+    let register;
     // Second operand _contains_ register in parentheses
     if let Some((before_open, after_open)) = text.split_once('(') {
         match after_open.split_once(')') {
-            Some((reg, after_close)) => {
-                // We got a register string from between after_open and before_close
-                register = reg.to_uppercase();
+            Some((register_string, after_close)) => {
+                register = Register::from_str(register_string)?;
 
                 // Err: There's stuff on both sides of the parentheses!
                 if !before_open.is_empty() && !after_close.is_empty() {
                     return Err(format!("Failed to parse second operand: '{}'", input_str));
                 }
+
                 // Nothing outside parentheses; we're done
                 if before_open.is_empty() && after_close.is_empty() {
                     return Ok(Op2 {
@@ -463,11 +460,14 @@ fn parse_op2(input_str: &str) -> Result<Op2, String> {
                         register,
                     });
                 }
+
                 // One side is empty and one is not.
                 text = before_open.to_string() + after_close;
             }
             None => return Err("Unclosed parentheses".to_string())
         }
+    } else {
+        register = Register::R0;
     }
 
     // _No register_ in second operand. It's just address.
@@ -482,6 +482,7 @@ fn parse_op2(input_str: &str) -> Result<Op2, String> {
 
 #[cfg(test)]
 mod tests {
+    use crate::compiler::Keyword;
     use super::*;
     /*
     Addressing modes require some careful testing.
@@ -631,5 +632,22 @@ mod tests {
         assert_eq!(parse_op2("@0(FP)").unwrap().mode, 1);   // Indexed indirect
         assert_eq!(parse_op2("@0b101(R2)").unwrap().mode, 1);   // Indexed indirect
         assert_eq!(parse_op2("@-0b1010(R3)").unwrap().mode, 1);   // Indexed indirect
+    }
+
+    #[test]
+    fn test_parse_instruction() {
+        let sym = HashMap::new();
+        let sym2 = HashMap::new();
+        assert_eq!(parse_instruction(dummy_statement("add r1 =0"), None, &sym, &sym2, &sym2, 0).unwrap(), 287309824);
+    }
+
+    fn dummy_statement(text: &str) -> Statement {
+        Statement {
+            statement_type: Keyword::Code,
+            label: None,
+            words: text.split_whitespace().map(str::to_string).collect(),
+            line: 0,
+            comment: None,
+        }
     }
 }

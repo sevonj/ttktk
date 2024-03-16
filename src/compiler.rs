@@ -33,11 +33,11 @@ pub fn compile(source: String) -> Result<String, String> {
     let mut org: Option<usize> = None;
 
     // Dictionary of const names and their valuers.
-    let const_symbols: HashMap<String, i16>;
+    let const_symbols: HashMap<String, i32>;
 
     // Dictionaries of labels and their offsets in their respective segments.
-    let data_symbols: HashMap<String, usize>;
-    let code_symbols: HashMap<String, usize>;
+    let data_symbols: HashMap<String, i32>;
+    let code_symbols: HashMap<String, i32>;
 
     // These contain source processed into integers.
     let data_segment: Vec<i32>;
@@ -220,8 +220,8 @@ fn parse_org_directive(statement: &Statement) -> Result<usize, String> {
 
 /// This will create a dictionary of all constants (keyword EQU).
 /// Note: Do check for multiple definitions _before_ this.
-fn parse_const_statements(statements: &Vec<Statement>) -> Result<HashMap<String, i16>, String> {
-    let mut consts: HashMap<String, i16> = HashMap::new();
+fn parse_const_statements(statements: &Vec<Statement>) -> Result<HashMap<String, i32>, String> {
+    let mut consts: HashMap<String, i32> = HashMap::new();
     for statement in statements {
         if statement.statement_type != Keyword::Constant {
             continue;
@@ -263,7 +263,7 @@ fn parse_const_statements(statements: &Vec<Statement>) -> Result<HashMap<String,
         }
 
         // Done
-        consts.insert(label, value as i16);
+        consts.insert(label, value);
     }
     return Ok(consts);
 }
@@ -271,7 +271,7 @@ fn parse_const_statements(statements: &Vec<Statement>) -> Result<HashMap<String,
 /// Creates data segment and data symbols
 fn parse_data_statements(
     statements: &mut Vec<Statement>)
-    -> Result<(Vec<i32>, HashMap<String, usize>), String>
+    -> Result<(Vec<i32>, HashMap<String, i32>), String>
 {
     let mut data_segment = Vec::new();
     let mut data_symbols = HashMap::new();
@@ -304,7 +304,7 @@ fn parse_data_statements(
             "DC" => {
                 // Add symbol, if labeled
                 if let Some(label) = &statement.label {
-                    data_symbols.insert(label.clone(), data_segment.len());
+                    data_symbols.insert(label.clone(), data_segment.len() as i32);
                 }
 
                 // Push data
@@ -321,7 +321,7 @@ fn parse_data_statements(
 
                 // Add symbol, if labeled
                 if let Some(label) = &statement.label {
-                    data_symbols.insert(label.clone(), data_segment.len());
+                    data_symbols.insert(label.clone(), data_segment.len() as i32);
                 }
 
                 // Push data
@@ -336,7 +336,7 @@ fn parse_data_statements(
 }
 
 /// Before actually parsing the code, we need to know possible code labels the code might reference.
-fn parse_code_symbols(statements: &Vec<Statement>) -> HashMap<String, usize> {
+fn parse_code_symbols(statements: &Vec<Statement>) -> HashMap<String, i32> {
     let mut code_symbols = HashMap::new();
     let mut code_offset = 0;
     for statement in statements {
@@ -401,8 +401,8 @@ fn assert_no_multiple_definition(statements: &Vec<Statement>) -> Result<(), Stri
 fn build_b91(
     code_segment: Vec<i32>,
     data_segment: Vec<i32>,
-    code_symbols: HashMap<String, usize>,
-    data_symbols: HashMap<String, usize>,
+    code_symbols: HashMap<String, i32>,
+    data_symbols: HashMap<String, i32>,
     org: Option<usize>,
 ) -> Result<String, String>
 {
@@ -436,12 +436,12 @@ fn build_b91(
     return_str += "___symboltable___\n";
     // Variables:
     for (label, offset) in data_symbols {
-        let addr = data_start + offset;
+        let addr = (data_start as i32) + offset;
         return_str += format!("{} {}\n", label, addr).as_str();
     }
     // Code labels
     for (label, offset) in code_symbols {
-        let addr = org + offset;
+        let addr = (org as i32) + offset;
         return_str += format!("{} {}\n", label, addr).as_str();
     }
 
