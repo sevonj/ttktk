@@ -282,9 +282,7 @@ impl OpCode {
 pub fn parse_instruction(
     statement: Statement,
     org: Option<usize>,
-    const_symbols: &HashMap<String, i32>,
-    code_symbols: &HashMap<String, i32>,
-    data_symbols: &HashMap<String, i32>,
+    symbols: &HashMap<String, i32>,
     code_size: usize,
 ) -> Result<i32, String>
 {
@@ -366,15 +364,9 @@ pub fn parse_instruction(
         } else if let Ok(val) = str_to_builtin_const(&parsed.addr) {
             // (is builtin const)
             addr = val;
-        } else if let Some(val) = const_symbols.get(&parsed.addr) {
-            // (is const)
+        } else if let Some(val) = symbols.get(&parsed.addr) {
+            // (is in symbol table)
             addr = val.to_i32().unwrap();
-        } else if let Some(offset) = data_symbols.get(&parsed.addr) {
-            // (is variable)
-            addr = (org + code_size).to_i32().unwrap() + offset;
-        } else if let Some(offset) = code_symbols.get(&parsed.addr) {
-            // (is code label)
-            addr = (org).to_i32().unwrap() + offset;
         } else if let Ok(val) = str_to_integer(parsed.addr.as_str()) {
             // (is number)
             addr = val;
@@ -640,9 +632,12 @@ mod tests {
 
     #[test]
     fn test_parse_instruction() {
-        let sym = HashMap::new();
-        let sym2 = HashMap::new();
-        assert_eq!(parse_instruction(dummy_statement("add r1 =0"), None, &sym, &sym2, &sym2, 0).unwrap(), 287309824);
+        // Dummy symbol table
+        let map = Default::default();
+        assert_eq!(parse_instruction(dummy_statement("add r1 =0"), None, &map, 0).unwrap(), 287309824);
+        assert_eq!(parse_instruction(dummy_statement("add r1 @(r1)"), None, &map, 0).unwrap(), 288423936);
+        assert_eq!(parse_instruction(dummy_statement("store r1 @0"), None, &map, 0).unwrap(), 19398656);
+        assert_eq!(parse_instruction(dummy_statement("store r1 @(r1)"), None, &map, 0).unwrap(), 19464192);
     }
 
     fn dummy_statement(text: &str) -> Statement {

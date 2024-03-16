@@ -92,15 +92,19 @@ pub fn compile(source: String) -> Result<String, String> {
     let code_size = get_code_segment_size(&statements);
     code_symbols = parse_code_symbols(&statements);
 
+    let all_symbols = merge_symbol_tables(
+        &const_symbols,
+        &data_symbols,
+        &code_symbols,
+    );
+
     for statement in statements {
         if statement.statement_type == Keyword::Code {
             // TODO: symbol maps could be merged into one to make this function signature neater.
             code_segment.push(parse_instruction(
                 statement,
                 org,
-                &const_symbols,
-                &code_symbols,
-                &data_symbols,
+                &all_symbols,
                 code_size,
             )?);
         }
@@ -364,7 +368,6 @@ fn get_code_segment_size(statements: &Vec<Statement>) -> usize {
 }
 
 
-
 /// Go through statements and check if same label comes up more than once.
 fn assert_no_multiple_definition(statements: &Vec<Statement>) -> Result<(), String> {
     let mut failed = false;
@@ -527,6 +530,24 @@ fn str_to_integer(input_string: &str) -> Result<i32, String> {
         true => Ok(-value),
         false => Ok(value),
     }
+}
+
+fn merge_symbol_tables(
+    a: &HashMap<String, i32>,
+    b: &HashMap<String, i32>,
+    c: &HashMap<String, i32>,
+) -> HashMap<String, i32> {
+    let mut map = HashMap::new();
+    for (key, value) in a.into_iter() {
+        map.insert(key.clone(), value.clone());
+    }
+    for (key, value) in b.into_iter() {
+        map.insert(key.clone(), value.clone());
+    }
+    for (key, value) in c.into_iter() {
+        map.insert(key.clone(), value.clone());
+    }
+    map
 }
 
 /// One of the first things that happens to a line of code is to be organized into this struct.
