@@ -314,6 +314,10 @@ pub fn parse_instruction(
     let op2: String;
 
     match words.len() {
+        0 => {
+            op1 = String::new();
+            op2 = String::new();
+        }
         1 => {
             // Some jumps use op2 but not op1. Swap them, if appropriate.
             if opcode.is_op2_only() {
