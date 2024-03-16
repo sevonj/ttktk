@@ -2,12 +2,12 @@
 
 ![CI](https://github.com/sevonj/ttktk/actions/workflows/main.yml/badge.svg)
 
-This Rust package provides both a library, and a standalone executable for managing TTK-91 source (.k91) and binary (.b91) files.  
+This Rust package provides both a library, and a standalone executable for managing TTK-91 source (.k91) and binary (.b91) files.
 This is part of [TiToMachine](https://github.com/sevonj/titomachine).
 
 Tools:
 - **titoasm** - Assemble .k91 to .b91
--  TODO: disassembler - TiToMachine disassembler will be moved here
+- (coming soon) **disassembler** - TiToMachine disassembler will be moved here
 
 ## Additions and differences to Titokone
 (see: [Titokone](https://www.cs.helsinki.fi/group/titokone/))
@@ -35,7 +35,7 @@ Cargo.toml:
 
     # ...
 
-    ttktk = { git = "https://github.com/sevonj/ttktk.git" }
+    ttktk = { git = "https://github.com/sevonj/ttktk.git", tag = "v0.2.1" } # or whatever is the latest.
 ```
 code:
 ```rust
