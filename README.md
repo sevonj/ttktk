@@ -1,6 +1,8 @@
 # TTKTK - TTK-91 ToolKit
-This Rust package provides both a library, and a standalone binary for assembling TTK-91 source (.k91) into binary (.b91).
 
+![CI](https://github.com/sevonj/ttktk/actions/workflows/main.yml/badge.svg)
+
+This Rust package provides both a library, and a standalone binary for assembling TTK-91 source (.k91) into binary (.b91).  
 This is part of [TiToMachine](https://github.com/sevonj/titomachine).
 
 ![img.png](docs/box.png)
