@@ -1,0 +1,17 @@
+[package]
+name = "ttktk"
+version = "0.1.0"
+edition = "2021"
+authors = ["me <me@gmail.com>"]
+
+[lib]
+name = "libttktk"
+path = "src/lib.rs"
+
+[[bin]]
+name = "titoasm"
+path = "src/bin/titoasm.rs"
+
+[dependencies]
+num-traits = "0.2.18"
+
