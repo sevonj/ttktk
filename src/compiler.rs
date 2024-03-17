@@ -135,7 +135,7 @@ pub fn compile(source: String) -> Result<String, String> {
     Ok(binary)
 }
 
-/// This will Find all relevant source code lines, and break them into "Statements"
+/// This will find all relevant source code lines, and break them into "Statements"
 fn code_to_statements(source: &String) -> Result<Vec<Statement>, String> {
     let mut statements: Vec<Statement> = Vec::new();
 
@@ -442,8 +442,7 @@ fn build_b91(
     // --- Symbol table
     return_str += "___symboltable___\n";
     for (label, value) in symbol_table.into_iter() {
-        let addr = (data_start as i32) + value.offset;
-        return_str += format!("{} {}\n", label, addr).as_str();
+        return_str += format!("{} {}\n", label, value.offset).as_str();
     }
 
     // --- End
@@ -575,6 +574,27 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_org_directive() {
+        let statement = Statement {
+            statement_type: Keyword::Directive,
+            label: None,
+            words: "ORG 50".split_whitespace().map(str::to_string).collect(),
+            line: 0,
+            comment: None,
+        };
+        assert_eq!(parse_org_directive(&statement).unwrap(), 50);
+
+        let statement = Statement {
+            statement_type: Keyword::Directive,
+            label: None,
+            words: "ORG 0x1000".split_whitespace().map(str::to_string).collect(),
+            line: 0,
+            comment: None,
+        };
+        assert_eq!(parse_org_directive(&statement).unwrap(), 0x1000);
+    }
+
+    #[test]
     fn test_get_code_segment_size() {
         // Contains 6 instructions
         let source = "
@@ -684,6 +704,52 @@ mod tests {
         assert_eq!(absolute_table.get("data".into()).unwrap().offset, 22);
     }
 
+    #[test]
+    fn test_build_b91_correct_symbol_values() {
+        let mut symbol_table = HashMap::new();
+
+        symbol_table.insert("const".into(), Symbol { offset: 12, symbol_type: SymbolType::Const });
+        symbol_table.insert("code".into(), Symbol { offset: 34, symbol_type: SymbolType::Code });
+        symbol_table.insert("data".into(), Symbol { offset: 56, symbol_type: SymbolType::Data });
+
+        // Org is set to an arbitrary nonzero value to make sure it doesn't affect label offsets anymore.
+        let b91 = build_b91(Vec::new(), Vec::new(), symbol_table, 420).unwrap();
+        let mut lines = b91.lines();
+
+        // Skip until symboltable
+        loop {
+            if lines.next().unwrap() == "___symboltable___" {
+                break;
+            }
+        }
+
+        // Also make sure they're all found.
+        let mut const_found = false;
+        let mut code_found = false;
+        let mut data_found = false;
+
+        for _ in 0..3 {
+            let words: Vec<String> = lines.next().unwrap().split_whitespace().map(str::to_string).collect();
+            match words[0].as_str() {
+                "const" => {
+                    assert!(!const_found);
+                    assert_eq!(words[1].as_str(), "12");
+                    const_found = true
+                }
+                "code" => {
+                    assert!(!code_found);
+                    assert_eq!(words[1].as_str(), "34");
+                    code_found = true
+                }
+                "data" => {
+                    assert!(!data_found);
+                    assert_eq!(words[1].as_str(), "56");
+                    data_found = true
+                }
+                _ => panic!("wtf")
+            }
+        }
+    }
 
     #[test]
     fn test_cannot_redefine_const() {}
