@@ -6,7 +6,10 @@
 mod instruction;
 
 use std::collections::HashMap;
+use std::hash::Hash;
+use std::os::linux::raw::stat;
 use std::str::FromStr;
+use num_traits::abs;
 use crate::compiler::instruction::{OpCode, parse_instruction, Register};
 
 #[allow(dead_code)] // TODO: Not checked for anymore. Should be checked for symbol names.
@@ -20,11 +23,36 @@ const FORBIDDEN_CHARS: [char; 6] = [
 #[derive(PartialEq)]
 enum Keyword {
     Directive,
-    Constant,
+    Const,
     Data,
     Code,
     Register,
     None,
+}
+
+enum SymbolType {
+    Const,
+    CodeLabel,
+    DataLabel,
+}
+
+struct Symbol {
+    pub offset: i32,
+    pub symbol_type: SymbolType,
+}
+
+/// One of the first things that happens to a line of code is to be organized into this struct.
+/// Statement holds the code as Vec<String>, and knows some high-level information and metadata
+/// about it.
+struct Statement {
+    pub statement_type: Keyword,
+    pub label: Option<String>,
+    //
+    pub words: Vec<String>,
+    // Remaining keywords after label
+    pub line: usize,
+    #[allow(dead_code)] // Comments will be added to the output, eventually.
+    pub comment: Option<String>,
 }
 
 pub fn compile(source: String) -> Result<String, String> {
@@ -32,12 +60,8 @@ pub fn compile(source: String) -> Result<String, String> {
     // Start address. Zero if none.
     let mut org: Option<usize> = None;
 
-    // Dictionary of const names and their valuers.
-    let const_symbols: HashMap<String, i32>;
-
-    // Dictionaries of labels and their offsets in their respective segments.
-    let data_symbols: HashMap<String, i32>;
-    let code_symbols: HashMap<String, i32>;
+    // Dictionary of symbols
+    let mut symbol_table: HashMap<String, Symbol>;
 
     // These contain source processed into integers.
     let data_segment: Vec<i32>;
@@ -75,36 +99,27 @@ pub fn compile(source: String) -> Result<String, String> {
     // Unpack org from option.
     let org = org.unwrap_or(0);
 
-    // Get constants
-    match parse_const_statements(&statements) {
-        Ok(result) => const_symbols = result,
+    // Create symbol table
+    match create_symbol_table(&statements) {
+        Ok(result) => symbol_table = result,
         Err(e) => return Err(e)
     }
 
-    // Get variables
+    // Get Data Segment
     match parse_data_statements(&mut statements) {
-        Ok((seg, symbols)) => {
-            data_segment = seg;
-            data_symbols = symbols;
-        }
+        Ok(segment) => data_segment = segment,
         Err(e) => return Err(e)
     }
 
-    // Get code
+    // Apply offsets to symbol table
     let code_size = get_code_segment_size(&statements);
-    code_symbols = parse_code_symbols(&statements);
+    symbol_table = create_absolute_symbol_table(symbol_table, org, org + code_size);
 
-    let all_symbols = merge_symbol_tables(
-        &const_symbols,
-        &code_symbols,
-        &data_symbols,
-        org,
-        org + code_size,
-    );
 
+    // Get Code Segment
     for statement in statements {
         if statement.statement_type == Keyword::Code {
-            code_segment.push(parse_instruction(statement, &all_symbols)?);
+            code_segment.push(parse_instruction(statement, &symbol_table)?);
         }
     }
 
@@ -113,8 +128,7 @@ pub fn compile(source: String) -> Result<String, String> {
     match build_b91(
         code_segment,
         data_segment,
-        code_symbols,
-        data_symbols,
+        symbol_table,
         org,
     ) {
         Ok(result) => binary = result,
@@ -171,7 +185,7 @@ fn code_to_statements(source: &String) -> Result<Vec<Statement>, String> {
             }
             Keyword::Directive => statement_type = Keyword::Directive,
             Keyword::Data => statement_type = Keyword::Data,
-            Keyword::Constant => statement_type = Keyword::Constant,
+            Keyword::Const => statement_type = Keyword::Const,
             Keyword::Code => statement_type = Keyword::Code,
         }
 
@@ -220,63 +234,89 @@ fn parse_org_directive(statement: &Statement) -> Result<usize, String> {
     Ok(value as usize)
 }
 
-/// This will create a dictionary of all constants (keyword EQU).
-/// Note: Do check for multiple definitions _before_ this.
-fn parse_const_statements(statements: &Vec<Statement>) -> Result<HashMap<String, i32>, String> {
-    let mut consts: HashMap<String, i32> = HashMap::new();
+
+fn create_symbol_table(statements: &Vec<Statement>) -> Result<HashMap<String, Symbol>, String> {
+    let mut map = HashMap::new();
+    let mut code_offset = -1;
+    let mut data_offset = -1;
     for statement in statements {
-        if statement.statement_type != Keyword::Constant {
-            continue;
+        match statement.statement_type {
+            Keyword::Const => if statement.label.is_none() {
+                return Err(format!("Line {}: Constant requires a name!", statement.line));
+            }
+            Keyword::Code => code_offset += 1,
+            Keyword::Data => {
+                match statement.words[0].to_uppercase().as_str() {
+                    "DC" => data_offset += 1,
+                    "DS" => {
+                        if statement.words.len() < 2 {
+                            return Err(format!("Line {}: No size for data segment!", statement.line));
+                        }
+                        data_offset += str_to_integer(statement.words[1].as_str())?
+                    }
+                    _ => panic!("Line {}: Not a data keyword: {:?}", statement.line, statement.words)
+                }
+            }
+            _ => continue
         }
-        let keyword_string = statement.words[0].to_uppercase();
-        let keyword = keyword_string.as_str();
-        let line = statement.line;
-        let value;
-
-        // Guard: Keyword sanity check
-        if keyword != "EQU" {
-            return Err(format!("Line {}: '{}' is not 'EQU'. This is compiler's fault, not yours. Please file an issue.", line, keyword));
+        if let Some(label) = &statement.label {
+            let symbol;
+            match &statement.statement_type {
+                Keyword::Const => symbol = Symbol { offset: parse_const(statement)?, symbol_type: SymbolType::Const },
+                Keyword::Code => symbol = Symbol { offset: code_offset, symbol_type: SymbolType::Const },
+                Keyword::Data => symbol = Symbol { offset: data_offset, symbol_type: SymbolType::Const },
+                _ => continue
+            }
+            map.insert(label.clone(), symbol);
         }
-
-        // Guard: No label
-        if statement.label.is_none() {
-            return Err(format!("Constants require a name! '{}' on line {}", keyword, line));
-        }
-        let label = statement.label.clone().unwrap();
-
-        // Guard: Incorrect number of words
-        match statement.words.len() {
-            2 => (), // expected amount
-            1 => return Err(format!("No value given for '{}' on line {}", keyword, line)),
-            _ => return Err(format!("Too many words for '{}' on line {}", keyword, line)),
-        }
-
-        // Get value
-        match str_to_integer(&statement.words[1]) {
-            Ok(val) => value = val,
-            Err(e) => return Err(format!("Error parsing value on line {}: {}", line, e))
-        }
-
-        // Guard: Value out of range
-        if value < i16::MIN as i32 {
-            return Err(format!("Value out of range on line {}. Got {}, but minimum is {}. Note that constants are 16-bit only.", line, value, i16::MIN));
-        } else if value > i16::MAX as i32 {
-            return Err(format!("Value out of range on line {}. Got {}, but maximum is {}. Note that constants are 16-bit only.", line, value, i16::MAX));
-        }
-
-        // Done
-        consts.insert(label, value);
     }
-    return Ok(consts);
+    Ok(map)
 }
+
+/// Apply relevant segment offsets to values.
+fn create_absolute_symbol_table(relative_table: HashMap<String, Symbol>, code_start: usize, data_start: usize) -> HashMap<String, Symbol> {
+    let mut absolute_table = HashMap::new();
+    for (label, mut value) in &mut relative_table.into_iter() {
+        match value.symbol_type {
+            SymbolType::Const => {}
+            SymbolType::CodeLabel => value.offset += code_start as i32,
+            SymbolType::DataLabel => value.offset += data_start as i32,
+        }
+        absolute_table.insert(label, value);
+    }
+    absolute_table
+}
+
+fn parse_const(statement: &Statement) -> Result<i32, String> {
+    let keyword_string = statement.words[0].to_uppercase();
+    let keyword = keyword_string.as_str();
+    let line = statement.line;
+    let value;
+
+    match statement.words.len() {
+        2 => (), // expected amount
+        1 => return Err(format!("Line {}: No value given for '{}'", line, keyword)),
+        _ => return Err(format!("Line {}: Too many words for '{}'", line, keyword)),
+    }
+
+    match str_to_integer(&statement.words[1]) {
+        Ok(val) => value = val,
+        Err(e) => return Err(format!("Line {}: Error parsing value: {}", e, line))
+    }
+
+    if value < i16::MIN as i32 || value > i16::MAX as i32 {
+        return Err(format!("Line {}: Value out of range. Note that constants are 16-bit only.", line));
+    }
+    Ok(value)
+}
+
 
 /// Creates data segment and data symbols
 fn parse_data_statements(
     statements: &mut Vec<Statement>)
-    -> Result<(Vec<i32>, HashMap<String, i32>), String>
+    -> Result<Vec<i32>, String>
 {
     let mut data_segment = Vec::new();
-    let mut data_symbols = HashMap::new();
 
     for statement in statements {
         if statement.statement_type != Keyword::Data {
@@ -303,15 +343,8 @@ fn parse_data_statements(
 
         match keyword {
             // Data Constant - store a value
-            "DC" => {
-                // Add symbol, if labeled
-                if let Some(label) = &statement.label {
-                    data_symbols.insert(label.clone(), data_segment.len() as i32);
-                }
+            "DC" => data_segment.push(value),
 
-                // Push data
-                data_segment.push(value);
-            }
             // Data Segment - allocate space
             "DS" => {
                 // Guard: out of range
@@ -319,11 +352,6 @@ fn parse_data_statements(
                     return Err(format!("You tried to allocate a negative number of addresses! '{}' on line {}", keyword, line));
                 } else if value == 0 {
                     return Err(format!("You tried to allocate a zero addresses! '{}' on line {}", keyword, line));
-                }
-
-                // Add symbol, if labeled
-                if let Some(label) = &statement.label {
-                    data_symbols.insert(label.clone(), data_segment.len() as i32);
                 }
 
                 // Push data
@@ -334,24 +362,7 @@ fn parse_data_statements(
             _ => return Err(format!("Error: '{}' on line {} is not a variable keyword. This is compiler's fault, not yours. Please file an issue.", keyword, line)),
         }
     }
-    Ok((data_segment, data_symbols))
-}
-
-/// Before actually parsing the code, we need to know possible code labels the code might reference.
-fn parse_code_symbols(statements: &Vec<Statement>) -> HashMap<String, i32> {
-    let mut code_symbols = HashMap::new();
-    let mut code_offset = 0;
-    for statement in statements {
-        if statement.statement_type != Keyword::Code {
-            continue;
-        }
-        // Add symbol, if labeled
-        if let Some(label) = &statement.label {
-            code_symbols.insert(label.clone(), code_offset);
-        }
-        code_offset += 1;
-    }
-    code_symbols
+    Ok(data_segment)
 }
 
 fn get_code_segment_size(statements: &Vec<Statement>) -> usize {
@@ -364,7 +375,6 @@ fn get_code_segment_size(statements: &Vec<Statement>) -> usize {
     }
     code_offset
 }
-
 
 /// Go through statements and check if same label comes up more than once.
 fn assert_no_multiple_definition(statements: &Vec<Statement>) -> Result<(), String> {
@@ -402,8 +412,7 @@ fn assert_no_multiple_definition(statements: &Vec<Statement>) -> Result<(), Stri
 fn build_b91(
     code_segment: Vec<i32>,
     data_segment: Vec<i32>,
-    code_symbols: HashMap<String, i32>,
-    data_symbols: HashMap<String, i32>,
+    symbol_table: HashMap<String, Symbol>,
     org: usize,
 ) -> Result<String, String>
 {
@@ -434,14 +443,8 @@ fn build_b91(
 
     // --- Symbol table
     return_str += "___symboltable___\n";
-    // Variables:
-    for (label, offset) in data_symbols {
-        let addr = (data_start as i32) + offset;
-        return_str += format!("{} {}\n", label, addr).as_str();
-    }
-    // Code labels
-    for (label, offset) in code_symbols {
-        let addr = (org as i32) + offset;
+    for (label, value) in symbol_table.into_iter() {
+        let addr = (data_start as i32) + value.offset;
         return_str += format!("{} {}\n", label, addr).as_str();
     }
 
@@ -462,7 +465,7 @@ fn str_to_keyword_type(keyword: &str) -> Keyword {
         return Keyword::Register;
     }
     if keyword == "EQU" {
-        return Keyword::Constant;
+        return Keyword::Const;
     }
     if keyword == "DS" || keyword == "DC" {
         return Keyword::Data;
@@ -547,20 +550,6 @@ fn merge_symbol_tables(
         map.insert(key.clone(), value + data_start as i32);
     }
     map
-}
-
-/// One of the first things that happens to a line of code is to be organized into this struct.
-/// Statement holds the code as Vec<String>, and knows some high-level information and metadata
-/// about it.
-struct Statement {
-    pub statement_type: Keyword,
-    pub label: Option<String>,
-    //
-    pub words: Vec<String>,
-    // Remaining keywords after label
-    pub line: usize,
-    #[allow(dead_code)] // Comments will be added to the output, eventually.
-    pub comment: Option<String>,
 }
 
 #[cfg(test)]
