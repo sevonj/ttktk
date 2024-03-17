@@ -5,8 +5,7 @@
 //!
 use std::collections::HashMap;
 use std::str::FromStr;
-use num_traits::ToPrimitive;
-use crate::compiler::{Statement, str_to_builtin_const, str_to_integer};
+use crate::compiler::{Statement, str_to_builtin_const, str_to_integer, Symbol};
 
 #[derive(Copy, Clone)]
 pub enum Register {
@@ -279,10 +278,7 @@ impl OpCode {
     }
 }
 
-pub fn parse_instruction(
-    statement: Statement,
-    symbols: &HashMap<String, i32>,
-) -> Result<i32, String>
+pub fn parse_instruction(statement: Statement, symbol_table: &HashMap<String, Symbol>) -> Result<i32, String>
 {
     let mut words = statement.words.clone();
     let keyword_string = statement.words[0].to_uppercase();
@@ -361,9 +357,9 @@ pub fn parse_instruction(
         } else if let Ok(val) = str_to_builtin_const(&parsed.addr) {
             // (is builtin const)
             addr = val;
-        } else if let Some(val) = symbols.get(&parsed.addr) {
+        } else if let Some(symbol) = symbol_table.get(&parsed.addr) {
             // (is in symbol table)
-            addr = val.to_i32().unwrap();
+            addr = symbol.offset
         } else if let Ok(val) = str_to_integer(parsed.addr.as_str()) {
             // (is number)
             addr = val;
