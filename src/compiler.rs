@@ -6,10 +6,7 @@
 mod instruction;
 
 use std::collections::HashMap;
-use std::hash::Hash;
-use std::os::linux::raw::stat;
 use std::str::FromStr;
-use num_traits::abs;
 use crate::compiler::instruction::{OpCode, parse_instruction, Register};
 
 #[allow(dead_code)] // TODO: Not checked for anymore. Should be checked for symbol names.
@@ -30,10 +27,11 @@ enum Keyword {
     None,
 }
 
+#[derive(PartialEq, Debug)]
 enum SymbolType {
     Const,
-    CodeLabel,
-    DataLabel,
+    Code,
+    Data,
 }
 
 struct Symbol {
@@ -105,16 +103,16 @@ pub fn compile(source: String) -> Result<String, String> {
         Err(e) => return Err(e)
     }
 
+    // Apply offsets to symbol table
+    let code_size = get_code_segment_size(&statements);
+    symbol_table = create_absolute_symbol_table(symbol_table, org + 0, org + code_size);
+
+
     // Get Data Segment
     match parse_data_statements(&mut statements) {
         Ok(segment) => data_segment = segment,
         Err(e) => return Err(e)
     }
-
-    // Apply offsets to symbol table
-    let code_size = get_code_segment_size(&statements);
-    symbol_table = create_absolute_symbol_table(symbol_table, org, org + code_size);
-
 
     // Get Code Segment
     for statement in statements {
@@ -245,29 +243,29 @@ fn create_symbol_table(statements: &Vec<Statement>) -> Result<HashMap<String, Sy
                 return Err(format!("Line {}: Constant requires a name!", statement.line));
             }
             Keyword::Code => code_offset += 1,
-            Keyword::Data => {
-                match statement.words[0].to_uppercase().as_str() {
-                    "DC" => data_offset += 1,
-                    "DS" => {
-                        if statement.words.len() < 2 {
-                            return Err(format!("Line {}: No size for data segment!", statement.line));
-                        }
-                        data_offset += str_to_integer(statement.words[1].as_str())?
-                    }
-                    _ => panic!("Line {}: Not a data keyword: {:?}", statement.line, statement.words)
-                }
-            }
+            Keyword::Data => data_offset += 1,
             _ => continue
         }
+
+        // Add symbol
         if let Some(label) = &statement.label {
             let symbol;
             match &statement.statement_type {
                 Keyword::Const => symbol = Symbol { offset: parse_const(statement)?, symbol_type: SymbolType::Const },
-                Keyword::Code => symbol = Symbol { offset: code_offset, symbol_type: SymbolType::Const },
-                Keyword::Data => symbol = Symbol { offset: data_offset, symbol_type: SymbolType::Const },
+                Keyword::Code => symbol = Symbol { offset: code_offset, symbol_type: SymbolType::Code },
+                Keyword::Data => symbol = Symbol { offset: data_offset, symbol_type: SymbolType::Data },
                 _ => continue
             }
             map.insert(label.clone(), symbol);
+        }
+
+        // Data segment: Compensate for remaining size.
+        if statement.words[0].to_uppercase().as_str() == "DS" {
+            if statement.words.len() < 2 {
+                return Err(format!("Line {}: No size for data segment!", statement.line));
+            }
+            // -1 because we already incremented offset
+            data_offset += str_to_integer(statement.words[1].as_str())? - 1
         }
     }
     Ok(map)
@@ -279,8 +277,8 @@ fn create_absolute_symbol_table(relative_table: HashMap<String, Symbol>, code_st
     for (label, mut value) in &mut relative_table.into_iter() {
         match value.symbol_type {
             SymbolType::Const => {}
-            SymbolType::CodeLabel => value.offset += code_start as i32,
-            SymbolType::DataLabel => value.offset += data_start as i32,
+            SymbolType::Code => value.offset += code_start as i32,
+            SymbolType::Data => value.offset += data_start as i32,
         }
         absolute_table.insert(label, value);
     }
@@ -532,26 +530,6 @@ fn str_to_integer(input_string: &str) -> Result<i32, String> {
     }
 }
 
-fn merge_symbol_tables(
-    const_symbols: &HashMap<String, i32>,
-    code_symbols: &HashMap<String, i32>,
-    data_symbols: &HashMap<String, i32>,
-    code_start: usize,
-    data_start: usize,
-) -> HashMap<String, i32> {
-    let mut map = HashMap::new();
-    for (key, value) in const_symbols.into_iter() {
-        map.insert(key.clone(), value.clone());
-    }
-    for (key, value) in code_symbols.into_iter() {
-        map.insert(key.clone(), value + code_start as i32);
-    }
-    for (key, value) in data_symbols.into_iter() {
-        map.insert(key.clone(), value + data_start as i32);
-    }
-    map
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -595,6 +573,117 @@ mod tests {
         assert!(str_to_integer("4294967296").is_err());
         assert!(str_to_integer("0xfffffffff").is_err());
     }
+
+    #[test]
+    fn test_get_code_segment_size() {
+        // Contains 6 instructions
+        let source = "
+        nop
+        nop
+        label dc 3
+        const equ 00
+        nop
+        label2 nop
+        add r1, =2
+        ; nop
+        load r1, =2
+        ;
+        ;".to_string();
+        let statements = code_to_statements(&source).unwrap();
+        assert_eq!(get_code_segment_size(&statements), 6);
+    }
+
+    #[test]
+    fn test_create_symbol_table() {
+        let source = "
+        const1 equ 1
+        data1 dc 1
+        data2 ds 2
+        const2 equ 2
+        ; nop
+        nop
+        ;
+        code1 nop
+        code2 add r1, =2
+        data3 dc 3
+        out r1, =3
+        const3 equ 3
+        code3 load r1, =2
+        ".to_string();
+        let statements = code_to_statements(&source).unwrap();
+        let relative_table = create_symbol_table(&statements).unwrap();
+
+        assert_eq!(relative_table.get("const1".into()).unwrap().offset, 1);
+        assert_eq!(relative_table.get("const2".into()).unwrap().offset, 2);
+        assert_eq!(relative_table.get("const3".into()).unwrap().offset, 3);
+
+        // Note that data2 is a 2-address long segment
+        assert_eq!(relative_table.get("data1".into()).unwrap().offset, 0);
+        assert_eq!(relative_table.get("data2".into()).unwrap().offset, 1);
+        assert_eq!(relative_table.get("data3".into()).unwrap().offset, 3);
+
+        assert_eq!(relative_table.get("code1".into()).unwrap().offset, 1);
+        assert_eq!(relative_table.get("code2".into()).unwrap().offset, 2);
+        assert_eq!(relative_table.get("code3".into()).unwrap().offset, 4);
+    }
+
+    #[test]
+    fn test_create_symbol_table_works_with_anonymous_vars() {
+        let source = "
+        data1 dc 0  ; 0
+        dc 33       ; 1
+        data2 dc 2  ; 2
+        ds 3        ; 3-5
+        data3 dc 6  ; 6
+        ".to_string();
+        let statements = code_to_statements(&source).unwrap();
+        let relative_table = create_symbol_table(&statements).unwrap();
+
+        assert_eq!(relative_table.get("data1".into()).unwrap().offset, 0);
+        assert_eq!(relative_table.get("data2".into()).unwrap().offset, 2);
+        assert_eq!(relative_table.get("data3".into()).unwrap().offset, 6);
+    }
+
+    #[test]
+    fn test_create_symbol_table_correct_types() {
+        let source = "
+        const1 equ 1
+        data1 dc 1
+        code1 nop
+        const2 equ 2
+        data2 dc 2
+        code2 nop
+        ".to_string();
+        let statements = code_to_statements(&source).unwrap();
+        let relative_table = create_symbol_table(&statements).unwrap();
+
+        assert_eq!(relative_table.get("const1".into()).unwrap().symbol_type, SymbolType::Const);
+        assert_eq!(relative_table.get("const2".into()).unwrap().symbol_type, SymbolType::Const);
+        assert_eq!(relative_table.get("data1".into()).unwrap().symbol_type, SymbolType::Data);
+        assert_eq!(relative_table.get("data2".into()).unwrap().symbol_type, SymbolType::Data);
+        assert_eq!(relative_table.get("code1".into()).unwrap().symbol_type, SymbolType::Code);
+        assert_eq!(relative_table.get("code2".into()).unwrap().symbol_type, SymbolType::Code);
+    }
+
+
+    #[test]
+    /// Make sure that code and data segment offsets are applied to symbol table correctly.
+    fn test_create_absolute_symbol_table() {
+        let code_start = 10;
+        let data_start = 20;
+        let mut relative_table = HashMap::new();
+
+        relative_table.insert("const".into(), Symbol { offset: 2, symbol_type: SymbolType::Const });
+        relative_table.insert("code".into(), Symbol { offset: 2, symbol_type: SymbolType::Code });
+        relative_table.insert("data".into(), Symbol { offset: 2, symbol_type: SymbolType::Data });
+
+        let absolute_table = create_absolute_symbol_table(relative_table, code_start, data_start);
+
+        assert_eq!(absolute_table.get("const".into()).unwrap().offset, 2);
+        assert_eq!(absolute_table.get("code".into()).unwrap().offset, 12);
+        assert_eq!(absolute_table.get("data".into()).unwrap().offset, 22);
+    }
+
 
     #[test]
     fn test_cannot_redefine_const() {}

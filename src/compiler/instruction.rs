@@ -5,7 +5,6 @@
 //!
 use std::collections::HashMap;
 use std::str::FromStr;
-use num_traits::ToPrimitive;
 use crate::compiler::{Statement, str_to_builtin_const, str_to_integer, Symbol};
 
 #[derive(Copy, Clone)]
