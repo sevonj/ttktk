@@ -17,7 +17,7 @@ pub struct TTK91Instruction {
     pub addr: i16,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum Register {
     R0 = 0,
     R1 = 1,
@@ -447,6 +447,38 @@ impl FromStr for Register {
             "R6" | "SP" => Ok(Register::R6),
             "R7" | "FP" => Ok(Register::R7),
             _ => Err(format!("{} is not a register.", s))
+        }
+    }
+}
+
+impl fmt::Display for Register {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Register::R0 => write!(f, "R0"),
+            Register::R1 => write!(f, "R1"),
+            Register::R2 => write!(f, "R2"),
+            Register::R3 => write!(f, "R3"),
+            Register::R4 => write!(f, "R4"),
+            Register::R5 => write!(f, "R5"),
+            Register::R6 => write!(f, "SP"),
+            Register::R7 => write!(f, "FP"),
+        }
+    }
+}
+
+impl TryFrom<i32> for Register {
+    type Error = ();
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Register::R0),
+            1 => Ok(Register::R1),
+            2 => Ok(Register::R2),
+            3 => Ok(Register::R3),
+            4 => Ok(Register::R4),
+            5 => Ok(Register::R5),
+            6 => Ok(Register::R6),
+            7 => Ok(Register::R7),
+            _ => Err(()),
         }
     }
 }
