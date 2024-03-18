@@ -73,7 +73,7 @@ pub fn disassemble_instruction(input_instr: i32) -> String {
     mode -= opcode.get_default_mode();
 
     // Construct return string
-    let mut retstr = String::new();
+    let mut retstr = format!("{:width$}", opcode.to_string(), width=6);
     match opcode.get_operand_count() {
         // No operands, just opcode
         0 => return retstr,
