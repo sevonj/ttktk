@@ -1,13 +1,17 @@
+// SPDX-FileCopyrightText: 2024 sevonj
+//
+// SPDX-License-Identifier: MPL-2.0
+
 //! TTKTK - TTK-91 ToolKit
-//! SPDX-License-Identifier: MPL-2.0
 //!
-//! TiToMachine k91 assembler.
+//! TiToMachine k91 assembly compiler.
 //!
-mod instruction;
+mod code_parser;
 
 use std::collections::HashMap;
 use std::str::FromStr;
-use crate::compiler::instruction::{OpCode, parse_instruction, Register};
+use crate::compiler::code_parser::parse_instruction;
+use crate::instructions::{OpCode, Register};
 
 #[allow(dead_code)] // TODO: Not checked for anymore. Should be checked for symbol names.
 const FORBIDDEN_CHARS: [char; 6] = [
