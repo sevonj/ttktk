@@ -85,9 +85,60 @@ pub enum OpCode {
     HCF = 0x72,
 }
 
+impl TryFrom<i32> for OpCode {
+    type Error = ();
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            0x00 => Ok(OpCode::NOP),
+            0x01 => Ok(OpCode::STORE),
+            0x02 => Ok(OpCode::LOAD),
+            0x03 => Ok(OpCode::IN),
+            0x04 => Ok(OpCode::OUT),
+            0x11 => Ok(OpCode::ADD),
+            0x12 => Ok(OpCode::SUB),
+            0x13 => Ok(OpCode::MUL),
+            0x14 => Ok(OpCode::DIV),
+            0x15 => Ok(OpCode::MOD),
+            0x16 => Ok(OpCode::AND),
+            0x17 => Ok(OpCode::OR),
+            0x18 => Ok(OpCode::XOR),
+            0x19 => Ok(OpCode::SHL),
+            0x1A => Ok(OpCode::SHR),
+            0x1B => Ok(OpCode::NOT),
+            0x1C => Ok(OpCode::SHRA),
+            0x1F => Ok(OpCode::COMP),
+            0x20 => Ok(OpCode::JUMP),
+            0x21 => Ok(OpCode::JNEG),
+            0x22 => Ok(OpCode::JZER),
+            0x23 => Ok(OpCode::JPOS),
+            0x24 => Ok(OpCode::JNNEG),
+            0x25 => Ok(OpCode::JNZER),
+            0x26 => Ok(OpCode::JNPOS),
+            0x27 => Ok(OpCode::JLES),
+            0x28 => Ok(OpCode::JEQU),
+            0x29 => Ok(OpCode::JGRE),
+            0x2A => Ok(OpCode::JNLES),
+            0x2B => Ok(OpCode::JNEQU),
+            0x2C => Ok(OpCode::JNGRE),
+            0x31 => Ok(OpCode::CALL),
+            0x32 => Ok(OpCode::EXIT),
+            0x33 => Ok(OpCode::PUSH),
+            0x34 => Ok(OpCode::POP),
+            0x35 => Ok(OpCode::PUSHR),
+            0x36 => Ok(OpCode::POPR),
+            0x70 => Ok(OpCode::SVC),
+            // Extended
+            0x39 => Ok(OpCode::IEXIT),
+            0x71 => Ok(OpCode::HLT),
+            0x72 => Ok(OpCode::HCF),
+            _ => Err(())
+        }
+    }
+}
+
 impl FromStr for OpCode {
     type Err = String;
-    fn from_str(s: &str) -> Result<Self, String> {
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_uppercase().as_str() {
             "NOP" => Ok(OpCode::NOP),
             "STORE" => Ok(OpCode::STORE),
@@ -385,7 +436,7 @@ impl OpCode {
 
 impl FromStr for Register {
     type Err = String;
-    fn from_str(s: &str) -> Result<Self, String> {
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_uppercase().as_str() {
             "R0" => Ok(Register::R0),
             "R1" => Ok(Register::R1),

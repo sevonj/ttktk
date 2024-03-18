@@ -10,7 +10,8 @@ mod code_parser;
 
 use std::collections::HashMap;
 use std::str::FromStr;
-use crate::compiler::code_parser::{OpCode, parse_instruction, Register};
+use crate::compiler::code_parser::parse_instruction;
+use crate::instructions::{OpCode, Register};
 
 #[allow(dead_code)] // TODO: Not checked for anymore. Should be checked for symbol names.
 const FORBIDDEN_CHARS: [char; 6] = [

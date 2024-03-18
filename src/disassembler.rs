@@ -6,7 +6,6 @@
 //!
 //! TTK-91 Disassembly module.
 //!
-use num_traits::FromPrimitive;
 use crate::instructions::OpCode;
 
 fn second2string(m: i32, ri: i32, addr: i32) -> String {
@@ -57,15 +56,45 @@ fn rj2string(r: i32) -> String {
 }
 
 pub fn disassemble_instruction(input_instr: i32) -> String {
-    let mut retstr = String::new();
 
-    let opcode = input_instr >> 24;
+    // Split the value
+    let opcode;
+    match OpCode::try_from(input_instr >> 24) {
+        Ok(value) => opcode = value,
+        Err(_) => return "N/A".into()
+    }
     let rj = (input_instr >> 21) & 0x7;
-    let mode = (input_instr >> 19) & 0x3;
+    let mut mode = (input_instr >> 19) & 0x3;
     let ri = (input_instr >> 16) & 0x7;
-    let addr = (input_instr & 0xffff) as i16 as i32; // these casts catch the sign
+    // these casts catch the sign
+    let addr = (input_instr & 0xffff) as i16 as i32;
 
-    match FromPrimitive::from_i32(opcode) {
+    // Reverse the potential addressing mode offset.
+    mode -= opcode.get_default_mode();
+
+    // Construct return string
+    let mut retstr = String::new();
+    match opcode.get_operand_count() {
+        // No operands, just opcode
+        0 => return retstr,
+        // 1 operand
+        1 => if opcode.is_op2_only() {
+            // 1 operand, second only
+            retstr += second2string(mode, ri, addr).as_str();
+        } else {
+            // 1 operand, first only
+            retstr += rj2string(rj).as_str();
+        },
+        // Both operands
+        2 => {
+            retstr += rj2string(rj).as_str();
+            retstr += second2string(mode, ri, addr).as_str();
+        }
+        _ => panic!("This should not be possible: '{}'", input_instr)
+    }
+    return retstr;
+    /*
+    match FromPrimitive::from_i32(input_instr >> 24) {
         Some(OpCode::NOP) => retstr += "NOP",
         Some(OpCode::STORE) => {
             retstr += "STORE ";
@@ -255,4 +284,5 @@ pub fn disassemble_instruction(input_instr: i32) -> String {
     }
 
     retstr
+    */
 }
