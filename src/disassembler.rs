@@ -72,12 +72,12 @@ pub fn disassemble_instruction(input_instr: i32) -> String {
             retstr += second2string(mode, ri, addr).as_str();
         } else {
             // 1 operand, first only
-            retstr += format!("{rj}").as_str();
+            retstr += format!("{rj}, ").as_str();
         },
 
         // Both operands
         2 => {
-            retstr += format!("{rj}").as_str();
+            retstr += format!("{rj}, ").as_str();
             retstr += second2string(mode, ri, addr).as_str();
         }
         _ => panic!("This should not be possible: '{}'", input_instr)
