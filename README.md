@@ -12,6 +12,7 @@ Library:
 - **libttktk::compiler** - Assembler backend for titoasm and titomachine
 - **libttktk::disassembler** - Disassembler
 - **libttktk::instructions** - Instruction struct and related enums.
+- **libttktk::b91** - Parse .b91 contents.
 
 ## Additions and differences to Titokone
 (see: [Titokone](https://www.cs.helsinki.fi/group/titokone/))
@@ -39,7 +40,7 @@ Cargo.toml:
 
     # ...
     
-    ttktk = { git = "https://github.com/sevonj/ttktk.git", tag = "v0.2.2" }
+    ttktk = { git = "https://github.com/sevonj/ttktk.git", tag = "v0.3.0" }
 ```
 ```rust
     use libttktk::compiler::compile;

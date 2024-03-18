@@ -9,3 +9,4 @@
 pub mod compiler;
 pub mod disassembler;
 pub mod instructions;
+pub mod b91;
