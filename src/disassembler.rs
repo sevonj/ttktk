@@ -52,6 +52,20 @@ pub fn disassemble_instruction(input_instr: i32) -> String {
     }
 }
 
+/// Disassemble instruction (classic)
+/// Same as the other one, but refuses to recognize extended instructions.
+pub fn disassemble_instruction_classic(input_instr: i32) -> String {
+    let opcode;
+    match OpCode::try_from(input_instr >> 24) {
+        Ok(value) => opcode = value,
+        Err(_) => return "N/A".into()
+    }
+    if !opcode.is_classic_isa() {
+        return "N/A".into();
+    }
+    disassemble_instruction(input_instr)
+}
+
 fn op2_to_string(mode: i32, ri: Register, addr: i32) -> String {
     let m = match mode {
         0 => "=",
