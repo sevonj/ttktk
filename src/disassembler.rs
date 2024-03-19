@@ -28,20 +28,15 @@ pub fn disassemble_instruction(input_instr: i32) -> String {
 
     // Get addressing mode
     let mut mode = (input_instr >> 19) & 0x3;
+    if mode == 3 {
+        return "N/A".into();
+    }
     // Undo mode offset from opcode.
     mode -= opcode.get_default_mode();
     // Undo mode offset from direct register addressing.
     if addr == 0 && ri != Register::R0 {
         mode += 1;
     }
-    // Mode 2 means @(R1) an is only valid on instructions with default mode of 0.
-    if mode == 2 && opcode.get_default_mode() == 1 {
-        return "N/A".into();
-    }
-    if mode == 3 {
-        return "N/A".into();
-    }
-
 
     // Return string
     let oper = format!("{:width$}", opcode.to_string(), width = 5);
@@ -141,6 +136,7 @@ mod tests {
     fn test_disassemble_mode_1() {
         assert_eq!(disassemble_instruction(287834112).as_str(), "ADD   R1,  0");
         assert_eq!(disassemble_instruction(19398656).as_str(), "STORE R1, @0");
+        assert_eq!(disassemble_instruction(287899648).as_str(), "ADD   R1, @R1");
     }
 
     #[test]
@@ -148,6 +144,8 @@ mod tests {
         assert_eq!(disassemble_instruction(288358400).as_str(), "ADD   R1, @0");
         assert_eq!(disassemble_instruction(19922944).as_str(), "STORE R1, @(R0)");
         assert_eq!(disassemble_instruction(19922945).as_str(), "STORE R1, @1(R0)");
+        assert_eq!(disassemble_instruction(19464192).as_str(), "STORE R1, @(R1)");
+        assert_eq!(disassemble_instruction(288423936).as_str(), "ADD   R1, @(R1)");
     }
 
     #[test]
