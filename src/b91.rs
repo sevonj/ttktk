@@ -12,6 +12,7 @@ use std::str::{FromStr, Lines};
 
 /// Representation of a .b91 file. Useful for loading compiled files.
 /// You can construct this from .b91 file contents with [from_str](#method.from_str).
+#[derive(Clone)]
 pub struct B91 {
     /// Code segment struct
     pub code_segment: B91Segment,
@@ -22,6 +23,7 @@ pub struct B91 {
 }
 
 /// Represents either the data segment, or code segment.
+#[derive(Clone)]
 pub struct B91Segment {
     /// First address in this segment
     pub start: usize,
