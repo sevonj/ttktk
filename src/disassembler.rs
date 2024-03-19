@@ -8,81 +8,79 @@
 //!
 use crate::instructions::{OpCode, Register};
 
-fn second2string(m: i32, ri: Register, addr: i32) -> String {
-    let mut str = String::new();
-    let mut m = m;
-    if addr == 0 && ri != Register::R0 {
-        m += 1;
-    }
-    match m {
-        0 => str += "=",
-        1 => str += " ",
-        2 => str += "@",
-        3 => {
-            // @(R1) results to this // Now does it?
-            return format!("@({})", ri);
-        }
-        _ => str += "wtf‽",
-    }
-    if ri == Register::R0 {
-        str += &addr.to_string();
-        return str;
-    }
-    if addr != 0 {
-        str += &addr.to_string();
-        str += "(";
-    }
-    str += format!("{ri}").as_str();
-    if addr != 0 {
-        str += ")";
-    }
-    str
-}
-
+/// Disassemble instruction (extended)
+/// Returns "N/A" if failed.
 pub fn disassemble_instruction(input_instr: i32) -> String {
 
-    // Split the value
+    // Get opcode
     let opcode;
     match OpCode::try_from(input_instr >> 24) {
         Ok(value) => opcode = value,
         Err(_) => return "N/A".into()
     }
+
+    // Get registers
     let rj = Register::try_from((input_instr >> 21) & 0x7).unwrap();
-    let mut mode = (input_instr >> 19) & 0x3;
     let ri = Register::try_from((input_instr >> 16) & 0x7).unwrap();
-    // these casts catch the sign
+
+    // Get address. These casts catch the sign.
     let addr = (input_instr & 0xffff) as i16 as i32;
 
-
-    // Reverse the potential addressing mode offset.
+    // Get addressing mode
+    let mut mode = (input_instr >> 19) & 0x3;
+    // Undo mode offset from opcode.
     mode += 1;
     mode -= opcode.get_default_mode();
+    // Undo mode offset from direct register addressing.
+    if addr == 0 && ri != Register::R0 {
+        mode += 1;
+    }
 
+    // Return string
+    let oper = format!("{:width$}", opcode.to_string(), width = 5);
+    let op2 = op2_to_string(mode, ri, addr);
 
-    // Construct return string
-    let mut retstr = format!("{:width$}", opcode.to_string(), width = 6);
     match opcode.get_operand_count() {
-
-        // No operands, just opcode
-        0 => return retstr,
-
-        // 1 operand
-        1 => if opcode.is_op2_only() {
-            // 1 operand, second only
-            retstr += second2string(mode, ri, addr).as_str();
+        0 => return format!("{oper}"),
+        1 => return if opcode.is_op2_only() {
+            format!("{oper} {op2}")
         } else {
-            // 1 operand, first only
-            retstr += format!("{rj}, ").as_str();
+            format!("{oper} {rj}")
         },
-
-        // Both operands
-        2 => {
-            retstr += format!("{rj}, ").as_str();
-            retstr += second2string(mode, ri, addr).as_str();
-        }
+        2 => return format!("{oper} {rj}, {op2}"),
         _ => panic!("This should not be possible: '{}'", input_instr)
     }
-    retstr
+}
+
+/// Disassemble instruction (classic)
+/// Same as the other one, but refuses to recognize extended instructions.
+pub fn disassemble_instruction_classic(input_instr: i32) -> String {
+    let opcode;
+    match OpCode::try_from(input_instr >> 24) {
+        Ok(value) => opcode = value,
+        Err(_) => return "N/A".into()
+    }
+    if !opcode.is_classic_isa() {
+        return "N/A".into();
+    }
+    disassemble_instruction(input_instr)
+}
+
+fn op2_to_string(mode: i32, ri: Register, addr: i32) -> String {
+    let m = match mode {
+        0 => "=",
+        1 => " ",
+        2 => "@",
+        _ => "‽",
+        //3 => return format!("@({ri})"), // @(R1) results to this // Now does it?
+    };
+    if ri == Register::R0 {
+        format!("{m}{addr}")
+    } else if addr == 0 {
+        format!("{m}{ri}")
+    } else {
+        format!("{m}{addr}({ri})")
+    }
 }
 
 #[cfg(test)]
