@@ -28,8 +28,10 @@ pub fn disassemble_instruction(input_instr: i32) -> String {
 
     // Get addressing mode
     let mut mode = (input_instr >> 19) & 0x3;
+    if mode == 3 {
+        return "N/A".into();
+    }
     // Undo mode offset from opcode.
-    mode += 1;
     mode -= opcode.get_default_mode();
     // Undo mode offset from direct register addressing.
     if addr == 0 && ri != Register::R0 {
@@ -67,17 +69,33 @@ pub fn disassemble_instruction_classic(input_instr: i32) -> String {
 }
 
 fn op2_to_string(mode: i32, ri: Register, addr: i32) -> String {
+    // -1 is only valid on instructions with default mode 1.
+    // 2 is only valid on instructions with default mode 2.
+    // 2 results in an @ sign _and_ parentheses.
     let m = match mode {
-        0 => "=",
-        1 => " ",
+        -1 => "=",
+        0 => " ",
+        1 => "@",
         2 => "@",
         _ => "‽",
-        //3 => return format!("@({ri})"), // @(R1) results to this // Now does it?
     };
+
     if ri == Register::R0 {
-        format!("{m}{addr}")
+        if mode == 2 {
+            if addr == 0 {
+                format!("{m}(R0)")
+            } else {
+                format!("{m}{addr}(R0)")
+            }
+        } else {
+            format!("{m}{addr}")
+        }
     } else if addr == 0 {
-        format!("{m}{ri}")
+        if mode == 2 {
+            format!("{m}({ri})")
+        } else {
+            format!("{m}{ri}")
+        }
     } else {
         format!("{m}{addr}({ri})")
     }
@@ -105,7 +123,36 @@ mod tests {
     #[test]
     fn test_disassemble_instruction() {
         assert_eq!(disassemble_instruction(287309824).as_str(), "ADD   R1, =0");
-
         assert_eq!(disassemble_instruction(287375360).as_str(), "ADD   R1,  R1");
+    }
+
+    #[test]
+    fn test_disassemble_mode_0() {
+        assert_eq!(disassemble_instruction(287309824).as_str(), "ADD   R1, =0");
+        assert_eq!(disassemble_instruction(18874368).as_str(), "STORE R1,  0");
+    }
+
+    #[test]
+    fn test_disassemble_mode_1() {
+        assert_eq!(disassemble_instruction(287834112).as_str(), "ADD   R1,  0");
+        assert_eq!(disassemble_instruction(19398656).as_str(), "STORE R1, @0");
+        assert_eq!(disassemble_instruction(287899648).as_str(), "ADD   R1, @R1");
+    }
+
+    #[test]
+    fn test_disassemble_mode_2() {
+        assert_eq!(disassemble_instruction(288358400).as_str(), "ADD   R1, @0");
+        assert_eq!(disassemble_instruction(19922944).as_str(), "STORE R1, @(R0)");
+        assert_eq!(disassemble_instruction(19922945).as_str(), "STORE R1, @1(R0)");
+        assert_eq!(disassemble_instruction(19464192).as_str(), "STORE R1, @(R1)");
+        assert_eq!(disassemble_instruction(288423936).as_str(), "ADD   R1, @(R1)");
+    }
+
+    #[test]
+    fn test_disassemble_mode_3() {
+        // "ADD   R1, ‽0"
+        assert_eq!(disassemble_instruction(288882688).as_str(), "N/A");
+        // "STORE R1, ‽0"
+        assert_eq!(disassemble_instruction(20447232).as_str(), "N/A");
     }
 }
