@@ -12,7 +12,7 @@ use std::str::{FromStr, Lines};
 
 /// Representation of a .b91 file. Useful for loading compiled files.
 /// You can construct this from .b91 file contents with [from_str](#method.from_str).
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct B91 {
     /// Code segment struct
     pub code_segment: B91Segment,
@@ -20,15 +20,17 @@ pub struct B91 {
     pub data_segment: B91Segment,
     /// Symbol table dictionary: <symbol, value>.
     pub symbol_table: HashMap<String, i32>,
+    /// Comments: <address, comment>.
+    pub comments: HashMap<usize, String>,
 }
 
 /// Represents either the data segment, or code segment.
 #[derive(Clone)]
 pub struct B91Segment {
     /// First address in this segment
-    pub start: usize,
+    pub start: i32,
     /// Last address in this segment
-    pub end: usize,
+    pub end: i32,
     /// Segment contents
     pub content: Vec<i32>,
 }
@@ -43,6 +45,8 @@ pub enum B91ParseError {
     SegmentOffsetParseError(String),
     NegativeSegmentSize(String),
     SymbolParseError(String),
+    CommentParseError(String),
+    MultipleComment(usize),
 }
 
 impl Display for B91ParseError {
@@ -71,6 +75,12 @@ impl Display for B91ParseError {
             }
             B91ParseError::SymbolParseError(line) => {
                 write!(f, "Failed to parse symbol: '{line}")
+            }
+            B91ParseError::CommentParseError(line) => {
+                write!(f, "Failed to parse comment: '{line}")
+            }
+            B91ParseError::MultipleComment(addr) => {
+                write!(f, "Multiple comments for same line: '{addr}")
             }
         }
     }
@@ -101,6 +111,7 @@ impl FromStr for B91 {
         let mut code_segment: Option<B91Segment> = None;
         let mut data_segment: Option<B91Segment> = None;
         let mut symbol_table: Option<HashMap<String, i32>> = None;
+        let mut comments: Option<HashMap<usize, String>> = None;
 
         // Loop through sections
         loop {
@@ -116,15 +127,21 @@ impl FromStr for B91 {
                         }
                         "___data___" => {
                             if data_segment.is_some() {
-                                return Err(B91ParseError::RepeatSection("___code___".into()));
+                                return Err(B91ParseError::RepeatSection("___data___".into()));
                             }
                             data_segment = Some(B91Segment::from_lines(&mut lines)?)
                         }
                         "___symboltable___" => {
                             if symbol_table.is_some() {
-                                return Err(B91ParseError::RepeatSection("___code___".into()));
+                                return Err(B91ParseError::RepeatSection("___symboltable___".into()));
                             }
-                            symbol_table = Some(parse_symbol_table(&mut lines)?);
+                            let table;
+                            let has_comments;
+                            (table, has_comments) = parse_symbol_table(&mut lines)?;
+                            symbol_table = Some(table);
+                            if has_comments {
+                                comments = Some(parse_comments_section(&mut lines)?);
+                            }
                             break;
                         }
                         // Symboltable doesn't have a length, so we're using ___end___ as terminator
@@ -144,19 +161,33 @@ impl FromStr for B91 {
         if symbol_table.is_none() {
             return Err(B91ParseError::SectionMissing("___symboltable___".into()));
         }
+        if comments.is_none() {
+            comments = Some(HashMap::new())
+        }
 
         Ok(B91 {
             code_segment: code_segment.unwrap(),
             data_segment: data_segment.unwrap(),
             symbol_table: symbol_table.unwrap(),
+            comments: comments.unwrap(),
         })
+    }
+}
+
+impl Default for B91Segment {
+    fn default() -> Self {
+        B91Segment {
+            start: 0,
+            end: -1,
+            content: vec![],
+        }
     }
 }
 
 impl B91Segment {
     pub fn from_lines(lines: &mut Lines) -> Result<B91Segment, B91ParseError> {
-        let start: usize;
-        let end: usize;
+        let start: i32;
+        let end: i32;
         let mut content: Vec<i32>;
 
         // Get start & end
@@ -168,12 +199,12 @@ impl B91Segment {
                     return Err(B91ParseError::SegmentOffsetParseError(format!("words.len() != 2, '{line}")));
                 }
                 // Start
-                match words[0].parse::<usize>() {
+                match words[0].parse::<i32>() {
                     Ok(value) => start = value,
                     Err(e) => return Err(B91ParseError::SegmentOffsetParseError(format!("{e}, '{line}")))
                 }
                 // End
-                match words[1].parse::<usize>() {
+                match words[1].parse::<i32>() {
                     Ok(value) => end = value,
                     Err(e) => return Err(B91ParseError::SegmentOffsetParseError(format!("{e}, '{line}")))
                 }
@@ -206,14 +237,18 @@ impl B91Segment {
     }
 }
 
-fn parse_symbol_table(lines: &mut Lines) -> Result<HashMap<String, i32>, B91ParseError> {
+/// Result Ok: (symbol_table, has_comments)
+fn parse_symbol_table(lines: &mut Lines) -> Result<(HashMap<String, i32>, bool), B91ParseError> {
     let mut symbol_table = HashMap::new();
     loop {
         match lines.next() {
             Some(line) => {
                 // Exit
                 if line == "___end___" {
-                    break;
+                    return Ok((symbol_table, false));
+                }
+                if line == "___comments___" {
+                    return Ok((symbol_table, true));
                 }
                 // Split
                 let words: Vec<String> = line.split_whitespace().map(str::to_string).collect();
@@ -234,12 +269,49 @@ fn parse_symbol_table(lines: &mut Lines) -> Result<HashMap<String, i32>, B91Pars
             None => return Err(B91ParseError::End),
         }
     }
-    Ok(symbol_table)
 }
+
+fn parse_comments_section(lines: &mut Lines) -> Result<HashMap<usize, String>, B91ParseError> {
+    let mut comments = HashMap::new();
+    loop {
+        match lines.next() {
+            Some(line) => {
+                // Exit
+                if line == "___end___" {
+                    break;
+                }
+                println!("made it here");
+
+                // Split
+                let addr_str;
+                let comment;
+                match line.split_once(' ') {
+                    Some((before, after)) => {
+                        addr_str = before;
+                        comment = after.to_owned()
+                    }
+                    None => return Err(B91ParseError::CommentParseError(format!("Failed to split line, '{line}")))
+                }
+                // Add Comment
+                match addr_str.parse::<usize>() {
+                    Ok(address) => {
+                        if comments.contains_key(&address) {
+                            return Err(B91ParseError::MultipleComment(address));
+                        }
+                        comments.insert(address, comment)
+                    }
+                    Err(e) => return Err(B91ParseError::CommentParseError(format!("{e}, '{line}")))
+                };
+            }
+            None => return Err(B91ParseError::End),
+        }
+    }
+    Ok(comments)
+}
+
 
 #[cfg(test)]
 mod tests {
-    use std::result;
     use super::*;
 
     #[test]
@@ -341,5 +413,83 @@ ___end___";
         assert_eq!(result.symbol_table.get("SYMBOL2").unwrap().to_owned(), 2);
 
         assert_eq!(result.symbol_table.len(), 3);
+    }
+
+    #[test]
+    fn test_b91_from_str_symbols_with_comments() {
+        let input = "___b91___
+___code___
+0 0
+0
+___data___
+0 0
+0
+___symboltable___
+symbol0 0
+Symbol1 1
+SYMBOL2 2
+___comments___
+0 comment0
+1 comment1
+3 this is the third comment
+4  this comment contains both a leading and a trailing space
+___end___";
+        let result = B91::from_str(input).unwrap();
+
+        assert_eq!(result.symbol_table.get("symbol0").unwrap().to_owned(), 0);
+        assert_eq!(result.symbol_table.get("Symbol1").unwrap().to_owned(), 1);
+        assert_eq!(result.symbol_table.get("SYMBOL2").unwrap().to_owned(), 2);
+
+        assert_eq!(result.symbol_table.len(), 3);
+    }
+
+    #[test]
+    fn test_b91_from_str_comments() {
+        let input = "___b91___
+___code___
+0 0
+0
+___data___
+0 0
+0
+___symboltable___
+symbol0 0
+Symbol1 1
+SYMBOL2 2
+___comments___
+0 comment0
+1 comment1
+3 this is the third comment
+4  this comment contains both a leading and a trailing space \n___end___";
+        let result = B91::from_str(input).unwrap();
+
+        assert_eq!(result.comments.get(&0).unwrap(), "comment0");
+        assert_eq!(result.comments.get(&1).unwrap(), "comment1");
+        assert!(result.comments.get(&2).is_none());
+        assert_eq!(result.comments.get(&3).unwrap(), "this is the third comment");
+        assert_eq!(result.comments.get(&4).unwrap(), " this comment contains both a leading and a trailing space ");
+        assert_eq!(result.comments.len(), 4);
+    }
+
+    #[test]
+    fn test_b91_from_str_comments_repeat() {
+        let input = "___b91___
+___code___
+0 0
+0
+___data___
+0 0
+0
+___symboltable___
+symbol0 0
+Symbol1 1
+SYMBOL2 2
+___comments___
+0 comment0
+1 comment1
+1 this is the third comment
+4  this comment contains both a leading and a trailing space \n___end___";
+        let result = B91::from_str(input);
+        assert!(result.is_err());
     }
 }
