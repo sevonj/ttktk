@@ -174,6 +174,9 @@ fn code_to_statements(source: &String) -> Result<Vec<Statement>, String> {
         } else {
             label = None
         }
+        if words.is_empty() {
+            return Err(format!("Unexpected end, {}\n{}", line, text));
+        }
 
         // Find the statement's type by looking at the first word.
         let keyword_string = words[0].to_uppercase();
@@ -753,6 +756,14 @@ mod tests {
                 _ => panic!("wtf")
             }
         }
+    }
+
+    #[test]
+    fn test_label_no_instruction() {
+        let source = "
+        not_a_keyword  ;
+        ".to_string();
+        assert!(code_to_statements(&source).is_err());
     }
 
     #[test]
